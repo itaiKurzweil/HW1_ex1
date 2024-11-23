@@ -15,3 +15,20 @@ completion = client.chat.completions.create(
 
 # Print the response
 print(completion.choices[0].message.content)
+
+#Extract the generated code from the response
+generated_code = completion.choices[0].message.content
+
+# Filter out non-code text (e.g., introductory explanations)
+# This assumes the code is enclosed within triple backticks ```python
+if "```python" in generated_code:
+    generated_code = generated_code.split("```python")[1].split("```")[0].strip()
+else:
+    generated_code = generated_code.strip()  # Fallback: assume entire content is code
+    
+#Write the generated code to a file named "generatedcode.py"
+file_name = "generatedcode.py"
+with open(file_name,"w") as file:
+    file.write(generated_code)
+    
+print(f"The generated code has been written to {file_name}.")    
