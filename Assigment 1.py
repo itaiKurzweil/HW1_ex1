@@ -1,5 +1,6 @@
 import os
 from openai import OpenAI
+import subprocess
 
 # Use the API key from the environment variable
 api_key = os.getenv("OPENAI_API_KEY")
@@ -31,4 +32,18 @@ file_name = "generatedcode.py"
 with open(file_name,"w") as file:
     file.write(generated_code)
     
-print(f"The generated code has been written to {file_name}.")    
+print(f"The generated code has been written to {file_name}.")
+
+
+# Run the generatedcode.py file using subprocess.run
+try:
+    print("\nRunning the generated code...")
+    result = subprocess.run(["python", file_name], text=True, capture_output=True, check=True)
+
+    # Print the output of the script
+    print("Output from generatedcode.py:")
+    print(result.stdout)
+except subprocess.CalledProcessError as e:
+    # Handle errors that occur during the execution of generatedcode.py
+    print("An error occurred while running the generated code:")
+    print(e.stderr)    
