@@ -30,6 +30,17 @@ PROGRAMS_LIST = [
     "Write a Python program to solve the N-Queens problem using backtracking and print all possible solutions for a given board size N."
 ]
 
+def add_noise_to_code(code):
+    """Introduce intentional noise into the generated code."""
+    if not code.strip():
+        return code  # Don't modify if the code is empty
+
+    # Randomly insert a noise character into the code
+    index = random.randint(0, len(code) - 1)
+    noise_char = random.choice(["#", "@", "$", "&", "?", "%"])
+    noisy_code = code[:index] + noise_char + code[index:]
+    return noisy_code
+
 def get_program_from_user():
     """Prompt the user for a program or return a random one from the list."""
     user_input = input(
@@ -42,7 +53,7 @@ def get_program_from_user():
         return chosen_program
     return user_input
 
-def generate_program_with_openai(prompt, error_message=None):
+def generate_program_with_openai(prompt, error_message=None, add_noise=False):
     """Generate code using OpenAI's API based on the given prompt, optionally including error context."""
     messages = [
         {"role": "user", "content": f"{prompt}. Provide only the Python code as plain text, without any explanations, comments, or formatting markers."}
@@ -55,7 +66,12 @@ def generate_program_with_openai(prompt, error_message=None):
         model="gpt-4o-mini",
         messages=messages
     )
-    return response.choices[0].message.content.strip()
+    code = response.choices[0].message.content.strip()
+    
+    # Add noise on the first generation to simulate errors
+    if add_noise:
+        code = add_noise_to_code(code)
+    return code
 
 def run_generated_code(file_path, timeout=30):
     """Run the generated code with a timeout."""
@@ -90,7 +106,8 @@ def main():
         # Generate the code
         try:
             print(f"Attempt {retry_count + 1}: Generating code...")
-            generated_code = generate_program_with_openai(program_prompt, error_message)
+            add_noise = retry_count == 0  # Add noise on the first try
+            generated_code = generate_program_with_openai(program_prompt, error_message, add_noise)
         except Exception as e:
             print(f"Error while generating code: {e}")
             break
@@ -100,7 +117,7 @@ def main():
         with open(file_path, "w", encoding="utf-8") as file:
             file.write(generated_code)
 
-        # Run the generated code
+        # Run the generated code with timeout
         success, error_message = run_generated_code(file_path, timeout=30)
 
         if success:
