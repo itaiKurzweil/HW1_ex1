@@ -42,16 +42,18 @@ def get_program_from_user():
         return chosen_program
     return user_input
 
-def generate_program_with_openai(prompt):
-    """Generate code using OpenAI's API based on the given prompt."""
+def generate_program_with_openai(prompt, error_message=None):
+    """Generate code using OpenAI's API based on the given prompt, optionally including error context."""
+    messages = [
+        {"role": "user", "content": f"{prompt}. Provide only the Python code as plain text, without any explanations, comments, or formatting markers."}
+    ]
+    if error_message:
+        messages.append(
+            {"role": "user", "content": f"The previous code had these errors: {error_message}. Please fix the code and provide the entire corrected version."}
+        )
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": f"{prompt}.Provide only the Python code as plain text, without any explanations, comments, or formatting markers."
-            }
-        ]
+        messages=messages
     )
     return response.choices[0].message.content.strip()
 
@@ -64,41 +66,52 @@ def run_generated_code(file_path, timeout=30):
             text=True,
             capture_output=True,
             check=True,
-            timeout=timeout,  # Timeout in seconds
+            timeout=timeout,
             encoding="utf-8"
         )
         print("\nOutput from the generated code:")
         print(result.stdout)
         print("Code creation completed successfully!")
+        return True, None  # Success
     except subprocess.TimeoutExpired:
-        print("The execution of the code timed out.")
+        return False, "Execution timed out."
     except subprocess.CalledProcessError as e:
-        print("\nAn error occurred while running the generated code:")
-        print(e.stderr)
+        return False, e.stderr
 
 def main():
     # Get the program idea from the user
     program_prompt = get_program_from_user()
 
-    # Generate the code
-    try:
-        print("Generating code...")
-        generated_code = generate_program_with_openai(program_prompt)
-    except Exception as e:
-        print(f"Error while generating code: {e}")
-        return
+    error_message = None
+    max_retries = 5
+    retry_count = 0
 
-    # Save the code to a file
-    file_path = "generated_code.py"
-    with open(file_path, "w", encoding="utf-8") as file:
-        file.write(generated_code)
+    while retry_count < max_retries:
+        # Generate the code
+        try:
+            print(f"Attempt {retry_count + 1}: Generating code...")
+            generated_code = generate_program_with_openai(program_prompt, error_message)
+        except Exception as e:
+            print(f"Error while generating code: {e}")
+            break
 
-    # Run the generated code with timeout
-    run_generated_code(file_path, timeout=30)
+        # Save the code to a file
+        file_path = "generated_code.py"
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(generated_code)
 
-    # Open the file in the default text editor
-    print("Opening the generated code...")
-    subprocess.call(["start", file_path], shell=True)
+        # Run the generated code
+        success, error_message = run_generated_code(file_path, timeout=30)
+
+        if success:
+            print("Code executed successfully!")
+            break  # Exit the loop on success
+        else:
+            print(f"Error running generated code! Error: {error_message}. Trying again...")
+            retry_count += 1
+
+    if retry_count == max_retries:
+        print("Code generation FAILED")
 
 if __name__ == "__main__":
     main()
