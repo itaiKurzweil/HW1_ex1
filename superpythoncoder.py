@@ -3,6 +3,10 @@ import subprocess
 import random
 from tqdm import tqdm  # For progress bar
 from openai import OpenAI
+from colorama import Fore, Style, init
+
+# Initialize colorama
+init(autoreset=True)
 
 # Set your OpenAI API key
 api_key = os.getenv("OPENAI_API_KEY")
@@ -69,7 +73,7 @@ def run_lint_check(file_path):
         )
         return result.stdout, result.returncode == 0  # Return lint output and success status
     except FileNotFoundError:
-        print("Pylint is not installed or not found. Please ensure it is installed.")
+        print(Fore.RED + "Pylint is not installed or not found. Please ensure it is installed.")
         exit(1)
 
 def generate_program_with_openai(prompt, lint_issues=None):
@@ -105,16 +109,16 @@ def generate_program_with_openai(prompt, lint_issues=None):
 
 def lint_and_fix(file_path, program_prompt, retries=3):
     """Run lint checks and use OpenAI API to fix issues."""
-    with tqdm(total=retries, desc="Fixing Lint Issues", ncols=80) as progress_bar:
+    with tqdm(total=retries, desc=Fore.YELLOW + "Fixing Lint Issues", ncols=80) as progress_bar:
         for attempt in range(retries):
             # Run pylint to check the file
             lint_output, lint_success = run_lint_check(file_path)
             if lint_success:
-                print("Amazing. No lint errors/warnings.")
+                print(Fore.GREEN + "Amazing. No lint errors/warnings.")
                 return True
 
-            print(f"Lint issues found:\n{lint_output}")
-            print(f"Attempting to fix lint issues (attempt {attempt + 1}/{retries})...")
+            print(Fore.RED + f"Lint issues found:\n{lint_output}")
+            print(Fore.YELLOW + f"Attempting to fix lint issues (attempt {attempt + 1}/{retries})...")
 
             # Read the current code
             with open(file_path, "r", encoding="utf-8") as file:
@@ -141,31 +145,32 @@ def lint_and_fix(file_path, program_prompt, retries=3):
             progress_bar.update(1)
 
     # If we exhaust retries, log remaining issues for manual review
-    print("\nUnable to pass lint checks after multiple attempts. Remaining issues:")
+    print(Fore.RED + "\nUnable to pass lint checks after multiple attempts. Remaining issues:")
     print(lint_output)
     with open("unresolved_lint_issues.log", "w", encoding="utf-8") as log_file:
         log_file.write(lint_output)
-    print("Remaining issues logged in 'unresolved_lint_issues.log'. Please review manually.")
+    print(Fore.YELLOW + "Remaining issues logged in 'unresolved_lint_issues.log'. Please review manually.")
     return False
 
 def get_program_from_user():
     """Prompt the user for a program or return a random one from the list."""
     user_input = input(
-        "I’m Super Python Coder. Tell me, which program would you like me to code for you? "
-        "If you don't have an idea, just press Enter and I will choose a random program to code: "
+        Fore.BLUE + Style.BRIGHT +
+        "I’m Super Python Coder. Tell me, which program would you like me to code for you?\n"
+        "If you don't have an idea, just press Enter and I will choose a random program to code:\n"
     )
     if user_input.strip() == "":
         chosen_program = random.choice(PROGRAMS_LIST)
-        print(f"Randomly chosen program: {chosen_program}")
+        print(Fore.CYAN + f"Randomly chosen program: {chosen_program}")
         return chosen_program
     return user_input
 
 def main():
-    # Get the program idea from the user
+    print(Fore.GREEN + Style.BRIGHT + "Welcome to Super Python Coder!")
     program_prompt = get_program_from_user()
 
     # First pass: Generate initial code
-    print(f"Generating initial code for: {program_prompt}")
+    print(Fore.CYAN + f"Generating initial code for: {program_prompt}")
     generated_code = generate_program_with_openai(program_prompt)
 
     # Save the generated code to a file
@@ -174,13 +179,13 @@ def main():
         file.write(generated_code)
 
     # Second pass: Run lint checks and fix issues
-    print("\nRunning lint checks and attempting fixes...")
+    print(Fore.CYAN + "\nRunning lint checks and attempting fixes...")
     lint_success = lint_and_fix(file_path, program_prompt)
 
     if lint_success:
-        print("\n“Amazing. No lint errors/warnings")
+        print(Fore.GREEN + "\nAmazing. No lint errors/warnings!")
     else:
-        print("\n “There are still lint errors/warnings”.")
+        print(Fore.RED + "\nThere are still lint errors/warnings.")
         exit(1)
 
 if __name__ == "__main__":
