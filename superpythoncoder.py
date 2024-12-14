@@ -64,9 +64,9 @@ def auto_fix_code(code):
 
     return fixed_code
 
-def run_lint_check(file_path):
+def run_lint_check():
     """Run pylint on the given file and return the output."""
-    result = subprocess.run(["pylint", file_path],text=True,capture_output=True)
+    result = subprocess.run(['pylint', "generatedcode.py"], capture_output=True, text=True)
     return result.stdout  # Return lint output and success status
 
 def generate_program_with_openai_for_lint(code, max_attempts=3):
@@ -111,11 +111,10 @@ def generate_program_with_openai_for_lint(code, max_attempts=3):
                 messages=messages
             )
             code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
-          # Remove everything before the first `def` and after the last `unittest.main()`
-            # code = re.sub(r"^.*?(?=def )", "\n", code, flags=re.DOTALL)
-            # code = re.sub(r"unittest\.main\(\).*?$", "unittest.main()\n", code, flags=re.DOTALL) 
-            # Validate lint resolution (mock validation step for demonstration purposes)
-            lint_output = run_lint_check(code)  # Replace with actual lint validation logic
+            lint_output = run_lint_check()
+            print("-------------------------------------------------------------------")
+            print(lint_output)
+            print("-------------------------------------------------------------------")
             if "10.00/10" in lint_output:
                 print(f"Lint issues resolved on attempt {attempt}.")
                 continue
@@ -124,14 +123,13 @@ def generate_program_with_openai_for_lint(code, max_attempts=3):
         except Exception as e:
                 print(f"Error during attempt {attempt}: {e}")
         else:
+            with open("generatedcode.py", "w", encoding="utf-8") as file:
+                file.write(code)
             print(code)
             print("-------------------------------------------------------------------")
 
     print("Reached the maximum number of attempts. Returning the best effort.")
     return code
-
-
-
 
 
 def generate_program_with_openai(user_input):
@@ -204,7 +202,8 @@ def generate_program_with_openai(user_input):
     else:
         print(Fore.GREEN + "All tests passed successfully")
         return generated_code, True
-    
+
+
 def optimized_code_with_openai(generated_code):
     """Optimize code using OpenAI's API based on the given code."""
     prompt = (
@@ -229,9 +228,7 @@ def optimized_code_with_openai(generated_code):
         messages=messages,
     )
     optimized_code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
-    # optimized_code = re.sub(r'[a-zA-Z]*\n', '', optimized_code)  # Remove opening triple backticks
-    # optimized_code = optimized_code.replace('', '')  # Remove closing triple backticks
-    
+
     # Measure the execution time of the original code
     start_time = time.time()
     subprocess.run(["python","generatedcode.py"], capture_output=True, text=True, check=True)
@@ -262,32 +259,6 @@ def optimized_code_with_openai(generated_code):
             return generated_code
 
 
-
-# def lint_and_fix(file_path,retries=3):
-#     """Run lint checks and use OpenAI API to fix issues."""
-#     with tqdm(total=retries, desc=Fore.YELLOW + "Fixing Lint Issues", ncols=80) as progress_bar:
-#         for attempt in range(retries):
-#             # Run pylint to check the file
-#             lint_output, lint_success = run_lint_check(file_path)
-#             if lint_success:
-#                 print(Fore.GREEN + "Amazing. No lint errors/warnings.")
-#                 return True
-
-#             print(Fore.RED + f"Lint issues found:\n{lint_output}")
-#             print(Fore.YELLOW + f"Attempting to fix lint issues (attempt {attempt + 1}/{retries})...")
-
-#             # Read the current code
-#             with open(file_path, "r", encoding="utf-8") as file:
-#                 code = file.read()
-
-#             # Apply automatic fixes for trivial issues
-#             code = auto_fix_code(code)
-
-
-#             progress_bar.update(1)
-#     return False
-
-
 def get_program_from_user():
     """Prompt the user for a program or return a random one from the list."""
     user_input = input(
@@ -300,6 +271,7 @@ def get_program_from_user():
         print(Fore.CYAN + f"Randomly chosen program: {chosen_program}")
         return chosen_program
     return user_input
+
 
 def main():
     print(Fore.GREEN + Style.BRIGHT + "Welcome to Super Python Coder!")
@@ -315,19 +287,7 @@ def main():
 
     optimized_code = generate_program_with_openai_for_lint(optimized_code)
     # Save the generated code to a file
-    file_path = "generated_code.py"
-    with open(file_path, "w", encoding="utf-8") as file:
-        file.write(optimized_code)
-
-    # Second pass: Run lint checks and fix issues
-    # print(Fore.CYAN + "\nRunning lint checks and attempting fixes...")
-    # lint_success = lint_and_fix(generated_code, program_prompt)
-
-    # if lint_success:
-    #     print(Fore.GREEN + "\nAmazing. No lint errors/warnings!")
-    # else:
-    #     print(Fore.RED + "\nThere are still lint errors/warnings.")
-    #     exit(1)
+    file_path = "generatedcode.py"
 
 if __name__ == "__main__":
     main()
