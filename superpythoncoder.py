@@ -82,9 +82,7 @@ def generate_program_with_openai_for_lint(code, max_attempts=3):
     """
     lint_issues = ""  # Initialize lint issues as an empty string
 
-    for attempt in range(1, max_attempts + 1):
-        print ("-------------------------------------------------------------------")
-        print(f"Attempting to resolve lint issues (attempt {attempt}/{max_attempts})...")
+    for attempt in tqdm(range(1, max_attempts + 1), desc="Resolving lint issues"):
 
         # Prepare the messages for OpenAI API
         messages = [
@@ -112,9 +110,7 @@ def generate_program_with_openai_for_lint(code, max_attempts=3):
             )
             code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
             lint_output = run_lint_check()
-            print("-------------------------------------------------------------------")
-            print(lint_output)
-            print("-------------------------------------------------------------------")
+       
             if "10.00/10" in lint_output:
                 print(f"Lint issues resolved on attempt {attempt}.")
                 continue
@@ -125,10 +121,9 @@ def generate_program_with_openai_for_lint(code, max_attempts=3):
         else:
             with open("generatedcode.py", "w", encoding="utf-8") as file:
                 file.write(code)
-            print(code)
-            print("-------------------------------------------------------------------")
+    
 
-    print("Reached the maximum number of attempts. Returning the best effort.")
+    print(Fore.RED + "Reached the maximum number of attempts. Returning the best effort.")
     return code
 
 
@@ -142,7 +137,7 @@ def generate_program_with_openai(user_input):
     after writing the code, check line by line and erase the '''python prefix and ''' suffix from the code. make it runable python code.!!!!!!!
     Go line by line and check if the response is runnable in Python, paying attention to the first and last lines to avoid extra syntax.
     make sure!!!!!!! about the last command i gave you!!!!!!!! make it run able with no chages at all!!!!
-    Delete the ```python\ on the first line and the closing ``` on the last line.
+    Delete the ```python\ on the first line and the closing ``` on the\u00a0last\u00a0line.
     Delete this ```python and this ```
     write the code as plain text without code block"""
     messages = [
@@ -163,7 +158,7 @@ def generate_program_with_openai(user_input):
     except subprocess.CalledProcessError as e:
         errs = e.stderr
         print(Fore.RED + f"Error running generated code! Eror:{errs}. Trying again.") 
-        for i in range (1,max_attempts-1):
+        for i in tqdm(range (1,max_attempts-1), desc="Retrying code generation"):
             prompt = (
                 "Write a Python program that does the following:\n" 
                 + user_input + "\n"
@@ -286,8 +281,6 @@ def main():
     optimized_code = optimized_code_with_openai(generated_code)
 
     optimized_code = generate_program_with_openai_for_lint(optimized_code)
-    # Save the generated code to a file
-    file_path = "generatedcode.py"
 
 if __name__ == "__main__":
     main()
