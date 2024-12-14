@@ -4,10 +4,12 @@ import random
 from tqdm import tqdm  # For progress bar
 from openai import OpenAI
 from colorama import Fore, Style, init
+import time
+import re
 
 # Initialize colorama
 init(autoreset=True)
-
+max_attempts = 5
 # Set your OpenAI API key
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)  # Instantiate the OpenAI client
@@ -64,93 +66,227 @@ def auto_fix_code(code):
 
 def run_lint_check(file_path):
     """Run pylint on the given file and return the output."""
-    try:
-        result = subprocess.run(
-            ["pylint", file_path],
-            text=True,
-            capture_output=True,
-            check=False
-        )
-        return result.stdout, result.returncode == 0  # Return lint output and success status
-    except FileNotFoundError:
-        print(Fore.RED + "Pylint is not installed or not found. Please ensure it is installed.")
-        exit(1)
+    result = subprocess.run(["pylint", file_path],text=True,capture_output=True)
+    return result.stdout  # Return lint output and success status
 
-def generate_program_with_openai(prompt, lint_issues=None):
-    """Generate code using OpenAI's API based on the given prompt."""
-    messages = [
-        {"role": "user", "content": f"{prompt}. Provide only the Python code as plain text, without any explanations, comments, or formatting markers."}
-    ]
-    if lint_issues:
-        messages.append(
+def generate_program_with_openai_for_lint(code, max_attempts=3):
+    """
+    Generate code using OpenAI's API to resolve lint issues iteratively.
+
+    Args:
+        code (str): The original program code.
+        max_attempts (int): Maximum number of attempts to resolve lint issues.
+
+    Returns:
+        str: The final generated code after resolving lint issues.
+    """
+    lint_issues = ""  # Initialize lint issues as an empty string
+
+    for attempt in range(1, max_attempts + 1):
+        print ("-------------------------------------------------------------------")
+        print(f"Attempting to resolve lint issues (attempt {attempt}/{max_attempts})...")
+
+        # Prepare the messages for OpenAI API
+        messages = [
             {
                 "role": "user",
                 "content": (
-                    f"The following lint issues were found in the previous code:\n{lint_issues}\n"
-                    "Please fix these issues to achieve a Pylint rating of 10/10. Specifically:\n"
-                    "- Ensure the file ends with exactly one newline (C0304).\n"
-                    "- Add a module-level docstring at the top of the file describing the purpose of the code (C0114). For example:\n"
-                    "\"\"\"\n"
-                    "This module provides functionality for solving the requested problem.\n"
-                    "It includes detailed explanations and examples of use.\n"
-                    "\"\"\"\n"
-                    "- Add meaningful docstrings for all functions and methods (C0116).\n"
-                    "- Add meaningful docstrings for all classes (C0115).\n"
-                    "- Rename constants to follow PEP8 naming conventions. Use `UPPER_CASE` for constants and descriptive names (C0103).\n"
-                    "- Retain the functionality of the code while addressing these issues and ensure the output passes Pylint checks with a score of 10/10."
-                )
-            }
-        )
+                    f"""Fix the following Python code to resolve these pylint errors/warnings:
+                    Code:\n{code}\n\n
+                    Pylint Errors/Warnings:\n{lint_issues} just write code, no extra information and words
+                    Ensure the output is fully executable as-is in a Python environment. 
+                    Go line by line and check if the response is runnable in Python, paying attention to the first and last lines to avoid extra syntax.
+                    Make sure!!!!!!! about the last command I gave you!!!!!!!! Make it runnable with no changes at all!!!! 
+                    Delete the ```python on the first line and the closing ``` on the last line.
+                    no matter what you do, do not give output before making sure this happens!!!!!!!!!!!!! .
+                    write the code as plain text without code block"""
+                ),
+            },
+        ]
+
+        try:
+            # Call OpenAI to generate updated code
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages
+            )
+            code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
+          # Remove everything before the first `def` and after the last `unittest.main()`
+            # code = re.sub(r"^.*?(?=def )", "\n", code, flags=re.DOTALL)
+            # code = re.sub(r"unittest\.main\(\).*?$", "unittest.main()\n", code, flags=re.DOTALL) 
+            # Validate lint resolution (mock validation step for demonstration purposes)
+            lint_output = run_lint_check(code)  # Replace with actual lint validation logic
+            if "10.00/10" in lint_output:
+                print(f"Lint issues resolved on attempt {attempt}.")
+                continue
+            else:
+                lint_issues = lint_output
+        except Exception as e:
+                print(f"Error during attempt {attempt}: {e}")
+        else:
+            print(code)
+            print("-------------------------------------------------------------------")
+
+    print("Reached the maximum number of attempts. Returning the best effort.")
+    return code
+
+
+
+
+
+def generate_program_with_openai(user_input):
+    """Generate code using OpenAI's API based on the given user input."""
+    errs = ""
+    prompt = f"""Write a Python program that performs the following: {user_input}
+    Provide only the runnable Python code and corresponding unit tests as plain text, without any explanations, comments, or additional formatting.
+    Ensure the code includes edge cases in the tests and produces the correct output for all cases.
+    Do not include any text other than the code and the tests.
+    after writing the code, check line by line and erase the '''python prefix and ''' suffix from the code. make it runable python code.!!!!!!!
+    Go line by line and check if the response is runnable in Python, paying attention to the first and last lines to avoid extra syntax.
+    make sure!!!!!!! about the last command i gave you!!!!!!!! make it run able with no chages at all!!!!
+    Delete the ```python\ on the first line and the closing ``` on the last line.
+    Delete this ```python and this ```
+    write the code as plain text without code block"""
+    messages = [
+        {"role": "user", "content": prompt}
+    ]
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages
-    )
-    return response.choices[0].message.content.strip()
+        )
+    
+    generated_code = response.choices[0].message.content.strip("```python\n").strip("```")+ "\n"
+    with open("generatedcode.py", "w") as file:
+        file.write(generated_code)
+        
 
-def lint_and_fix(file_path, program_prompt, retries=3):
-    """Run lint checks and use OpenAI API to fix issues."""
-    with tqdm(total=retries, desc=Fore.YELLOW + "Fixing Lint Issues", ncols=80) as progress_bar:
-        for attempt in range(retries):
-            # Run pylint to check the file
-            lint_output, lint_success = run_lint_check(file_path)
-            if lint_success:
-                print(Fore.GREEN + "Amazing. No lint errors/warnings.")
-                return True
+    try:
+        subprocess.run(["python","generatedcode.py"], capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        errs = e.stderr
+        print(Fore.RED + f"Error running generated code! Eror:{errs}. Trying again.") 
+        for i in range (1,max_attempts-1):
+            prompt = (
+                "Write a Python program that does the following:\n" 
+                + user_input + "\n"
+                "Notice the previous code failed some tests. Please fix the code and try again. "
+                "Keep the same tests!!!!! Do not change it!!!! Only fix the code!\n"
+                + generated_code + "\n"
+                "These are the erors:\n" + errs + "\n"
+                "Provide only the Python code as plain text, without any explanations, comments, or formatting markers.\n"
+                "Do not include any text other than the code and the tests.\n"
+                "After writing the code, check line by line and erase any ```python prefix and ``` suffix from the code. "
+                "Make it runnable Python code!!!!!!!!!!!!!! do it!!!!.\n"
+                "Delete this ```python and this ```!!!!!!! do not give ouptut before making sure this happens!!!!!!!!!!!!! .\n"
+                "write the code as plain text without code block"
+)
 
-            print(Fore.RED + f"Lint issues found:\n{lint_output}")
-            print(Fore.YELLOW + f"Attempting to fix lint issues (attempt {attempt + 1}/{retries})...")
-
-            # Read the current code
-            with open(file_path, "r", encoding="utf-8") as file:
-                code = file.read()
-
-            # Apply automatic fixes for trivial issues
-            code = auto_fix_code(code)
-
-            # Save the auto-fixed code back to the file
-            with open(file_path, "w", encoding="utf-8") as file:
-                file.write(code)
-
-            # Use OpenAI API to address deeper issues
-            fixed_code = generate_program_with_openai(
-                program_prompt,
-                lint_issues=lint_output
+            messages = [
+            {"role": "user", "content": prompt}
+            ]
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages
             )
+            generated_code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
+            with open("generatedcode.py", "w") as file:
+                file.write(generated_code)
+            try:
+                subprocess.run(["python","generatedcode.py"], capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError as error:
+                errs = error.stderr
+                print(Fore.RED + f"Error running generated code! Eror:{errs}. Trying again.")
+                continue
+            else:
+                print(Fore.GREEN + "All tests passed successfully")
+                return generated_code, True 
+        return generated_code, False
+    else:
+        print(Fore.GREEN + "All tests passed successfully")
+        return generated_code, True
+    
+def optimized_code_with_openai(generated_code):
+    """Optimize code using OpenAI's API based on the given code."""
+    prompt = (
+        "According to the instructionsn improve the code if possible. \n"
+        "The instruction is:\n"
+        "If you can't, write the same code again. Include the unit tests as well, make sure it's exactly the same tests as before.\n"
+        "No extra information, just the code and tests! "
+        "Ensure the output is fully executable as-is in a Python environment. "
+        "Go line by line and check if the response is runnable in Python, paying attention to the first and last lines to avoid extra syntax.\n"
+        'Delete the """python" from all.\n'
+        "write the code as plain text without code block.\n"
+        "The code is:\n"
+        + generated_code 
+        + "\n"
+    )
 
-            # Save the AI-fixed code back to the file
-            with open(file_path, "w", encoding="utf-8") as file:
-                file.write(fixed_code)
+    messages = [
+        {"role": "user", "content": prompt}
+    ]
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+    )
+    optimized_code = response.choices[0].message.content.strip("```python\n").strip("```") + "\n"
+    # optimized_code = re.sub(r'[a-zA-Z]*\n', '', optimized_code)  # Remove opening triple backticks
+    # optimized_code = optimized_code.replace('', '')  # Remove closing triple backticks
+    
+    # Measure the execution time of the original code
+    start_time = time.time()
+    subprocess.run(["python","generatedcode.py"], capture_output=True, text=True, check=True)
+    end_time = time.time()
+    old_code_time = end_time - start_time
+    
+    # Save the optimized code to a file
+    with open("generatedcode.py", "w", encoding="utf-8") as file:
+        file.write(optimized_code)
+    try:
+        start_time = time.time()
+        subprocess.run(["python", "generatedcode.py"], capture_output=True, text=True, check=True)
+        end_time = time.time()
+    except subprocess.CalledProcessError as e:
+        print(Fore.RED + f"Error running optimized code! Error: {e.stderr}")
+        with open("generatedcode.py", "w", encoding="utf-8") as file:
+            file.write(generated_code)
+        return generated_code
+    else:
+        new_code_time = end_time - start_time
+        if new_code_time < old_code_time:
+            print(Fore.GREEN + "Optimized code is faster than the original code")
+            return optimized_code
+        else:
+            print(Fore.RED + "Optimized code is slower than the original code")
+            with open("generatedcode.py", "w", encoding="utf-8") as file:
+                file.write(generated_code)
+            return generated_code
 
-            # Update progress bar
-            progress_bar.update(1)
 
-    # If we exhaust retries, log remaining issues for manual review
-    print(Fore.RED + "\nUnable to pass lint checks after multiple attempts. Remaining issues:")
-    print(lint_output)
-    with open("unresolved_lint_issues.log", "w", encoding="utf-8") as log_file:
-        log_file.write(lint_output)
-    print(Fore.YELLOW + "Remaining issues logged in 'unresolved_lint_issues.log'. Please review manually.")
-    return False
+
+# def lint_and_fix(file_path,retries=3):
+#     """Run lint checks and use OpenAI API to fix issues."""
+#     with tqdm(total=retries, desc=Fore.YELLOW + "Fixing Lint Issues", ncols=80) as progress_bar:
+#         for attempt in range(retries):
+#             # Run pylint to check the file
+#             lint_output, lint_success = run_lint_check(file_path)
+#             if lint_success:
+#                 print(Fore.GREEN + "Amazing. No lint errors/warnings.")
+#                 return True
+
+#             print(Fore.RED + f"Lint issues found:\n{lint_output}")
+#             print(Fore.YELLOW + f"Attempting to fix lint issues (attempt {attempt + 1}/{retries})...")
+
+#             # Read the current code
+#             with open(file_path, "r", encoding="utf-8") as file:
+#                 code = file.read()
+
+#             # Apply automatic fixes for trivial issues
+#             code = auto_fix_code(code)
+
+
+#             progress_bar.update(1)
+#     return False
+
 
 def get_program_from_user():
     """Prompt the user for a program or return a random one from the list."""
@@ -171,22 +307,27 @@ def main():
 
     # First pass: Generate initial code
     print(Fore.CYAN + f"Generating initial code for: {program_prompt}")
-    generated_code = generate_program_with_openai(program_prompt)
+    generated_code, status = generate_program_with_openai(program_prompt)
+    if not status:
+        print(Fore.RED + "Failed to generate code that passes the tests.")
+        return
+    optimized_code = optimized_code_with_openai(generated_code)
 
+    optimized_code = generate_program_with_openai_for_lint(optimized_code)
     # Save the generated code to a file
     file_path = "generated_code.py"
     with open(file_path, "w", encoding="utf-8") as file:
-        file.write(generated_code)
+        file.write(optimized_code)
 
     # Second pass: Run lint checks and fix issues
-    print(Fore.CYAN + "\nRunning lint checks and attempting fixes...")
-    lint_success = lint_and_fix(file_path, program_prompt)
+    # print(Fore.CYAN + "\nRunning lint checks and attempting fixes...")
+    # lint_success = lint_and_fix(generated_code, program_prompt)
 
-    if lint_success:
-        print(Fore.GREEN + "\nAmazing. No lint errors/warnings!")
-    else:
-        print(Fore.RED + "\nThere are still lint errors/warnings.")
-        exit(1)
+    # if lint_success:
+    #     print(Fore.GREEN + "\nAmazing. No lint errors/warnings!")
+    # else:
+    #     print(Fore.RED + "\nThere are still lint errors/warnings.")
+    #     exit(1)
 
 if __name__ == "__main__":
     main()
